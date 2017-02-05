@@ -43,7 +43,7 @@ EasyBot.prototype.evaluate = function () {
   var args = Array.prototype.slice.apply(arguments);
   console.log('Arguments ' + args);
   this.addToQueue(function () {
-    console.log('Trying to evaluate');
+    console.log('Trying to evaluate some code');
     return this.page.evaluate.apply(this.page, args);
   });
 

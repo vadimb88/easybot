@@ -20,6 +20,7 @@ var ctrlKey = (/ctrl/i.test(details.modifiers));
     if ((/HTMLHtmlElement/).test(details.target)) {
       details.target = details.doc.elementFromPoint(pageX, pageY);    
     }
+    
     clientX = pageX - details.doc.defaultView.scrollX;
     clientY = pageY - details.doc.defaultView.scrollY;
   }
