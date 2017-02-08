@@ -2,6 +2,7 @@
 require('./polifills').polifills();
 var Promise = require('./libs/bluebird.min');
 var webpage = require('webpage');
+var pageUtils = require('./libs/pageUtils').pageUtils;
 
 var fs = require('fs');
 
@@ -33,18 +34,7 @@ var createEventHandler = function (ctx, eventName) {
 var EasyBot = function (options) {
   this.queue = Promise.resolve();
   this.page = webpage.create();
-  this.handlers = {'onLoadStarted': [ 
-    {
-      fn: function () { console.log('MY LOAD STARTED'); },
-      once: true
-    },
-    {
-      fn: function () { console.log('MY LOAD STARTED2'); },
-      once: false
-    }
-  ]};
-
-  this.page.onLoadStarted = createEventHandler(this, 'onLoadStarted');
+  this.handlers = {};
 };
 
 EasyBot.prototype.addToQueue = function (cb) {
@@ -68,7 +58,8 @@ EasyBot.prototype.goto = function (url) {
           reject(new Error('Network problems'));
         } else {
           console.log('Page loaded');
-          self.page.injectJs('./libs/pageUtils.js');           
+          //self.page.injectJs('./libs/pageUtils.js');           
+          self.page.evaluate(pageUtils, 'Realy good text');
           resolve(status);
         }   
       });
@@ -176,16 +167,62 @@ EasyBot.prototype.removeEventListener = function (type, listener) {
   });  
 };
 
+EasyBot.prototype.scrollTo = function () {
+  /* Placeholder. Not implemented yet */
+  return this;
+};
+
+EasyBot.prototype.mousedown = function (selector) {
+  return this.evaluate(function (selector) {
+    return window.__utils__.mousedownEvent(selector);
+  }, selector);
+};
+
+EasyBot.prototype.mouseup = function (selector) {
+  return this.evaluate(function (selector) {
+    return window.__utils__.mouseupEvent(selector);
+  }, selector);
+};
+
+EasyBot.prototype.mouseover = function (selector) {
+  /* Placeholder. Not implemented yet */
+  return this;
+};
+
+EasyBot.prototype.mouseout = function (selector) {
+  /* Placeholder. Not implemented yet */
+  return this;
+};
+
+EasyBot.prototype.clickEvent = function (selector) {
+  return this.evaluate(function (selector) {
+    return window.__utils__.clickEvent(selector);
+  }, selector);
+};
+
 EasyBot.prototype.click = function (selector) {
   return this.evaluate(function (selector) {
-    someElement = document.querySelector(selector);
-    if (someElement !== null) {
-      makeClick(someElement);
+    return window.__utils__.clickSelector(selector);
+  }, selector);
+};
+
+EasyBot.prototype.clickNatural = function (selector) {
+  return this.evaluate(function (selector) {
+    window.scrollBy(0, 1600);
+    console.log('RECTTTTT ' + window.__utils__.getRect(selector));
+    return window.__utils__.getRect(selector);
+  }, selector)
+  .then(function (elementRect) {
+    if(elementRect) {      
+      var elementY = elementRect.top + elementRect.height/2 + Math.round(elementRect.height*(0.5 - Math.random())/15);
+		  var elementX = elementRect.left + elementRect.width/2 + Math.round(elementRect.width*(0.5 - Math.random())/15);
+      console.log('Clicking element at: ' + elementX + ' ' + elementY);
+      page.sendEvent('click', elementX, elementY, 'left');
       return true;
     }
-
+    
     return false;
-  }, selector);
+  });
 };
 
 EasyBot.prototype.evaluate = function () {
