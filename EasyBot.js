@@ -260,9 +260,8 @@ EasyBot.prototype.scrollToSelectorSmooth = function (selector) {
               window.scrollBy(0,randomScroll);
               console.log("scrollstep = " + direction * randomScroll);
 
-            }, direction, scrollStep, elementRect, heightMargin);				
-            
-            //elementRect = getRect(page, selector);          
+            }, direction, scrollStep, elementRect, heightMargin);				            
+        
             var randomDelay = Math.floor(Math.random() * 60 + 100);
             return Promise.delay(randomDelay);	
           }
