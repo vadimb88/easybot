@@ -1,9 +1,9 @@
 'use strict';
-require('./polifills').polifills();
+require('./utils').polifills();
 var Promise = require('./libs/bluebird.min');
+var promiseWhile = require('./utils').promiseWhile;
 var webpage = require('webpage');
 var pageUtils = require('./libs/pageUtils').pageUtils;
-
 var fs = require('fs');
 
 var EVENTS = [''];
@@ -70,7 +70,7 @@ EasyBot.prototype.goto = function (url) {
 };
 
 EasyBot.prototype.back = function () {
-  /* Page goBack function is async but it don't take any callbacks.
+  /* Page goBack function is async but it doesn't take any callbacks.
    * So i wraped it in Promise and resolve this promise after onLoadFinished event.
    */
   
@@ -89,7 +89,7 @@ EasyBot.prototype.back = function () {
 };
 
 EasyBot.prototype.forward = function () {
-  /* Page goForward function is async but it don't take any callbacks.
+  /* Page goForward function is async but it doesn't take any callbacks.
    * So i wraped it in Promise and resolve this promise after onLoadFinished event.
    */
 
@@ -108,7 +108,7 @@ EasyBot.prototype.forward = function () {
 };
 
 EasyBot.prototype.refresh = function () {
-  /* Page reload function is async but it don't take any callbacks.
+  /* Page reload function is async but it doesn't take any callbacks.
    * So i wraped it in Promise and resolve this promise after onLoadFinished event.
    */
 
@@ -167,9 +167,117 @@ EasyBot.prototype.removeEventListener = function (type, listener) {
   });  
 };
 
-EasyBot.prototype.scrollTo = function () {
-  /* Placeholder. Not implemented yet */
-  return this;
+EasyBot.prototype.scrollTo = function (y, x) {
+  return this.evaluate(function (y, x) {
+    console.log('Scrolling TO: ' + x + ' ' + y);
+    return window.scrollTo(x, y);
+  }, y, x);
+};
+
+EasyBot.prototype.scrollBy = function (y, x) {
+  return this.evaluate(function (y, x) {
+    console.log('Scrolling BY: ' + x + ' ' + y);
+    return window.scrollBy(x, y);
+  }, y, x);
+};
+
+var getRect = function (page, selector) {
+  return page.evaluate(function (selector) {
+    return window.__utils__.getRect(selector);
+  }, selector);
+};
+
+var getScrollTop = function (page) {
+  return page.evaluate(function () {
+		return window.pageYOffset; 
+	});
+};
+
+var getScrollHeight = function (page) {
+  return page.evaluate(function () {
+    return document.body.scrollHeight;
+  });
+};
+
+EasyBot.prototype.scrollToSelector = function (selector) {
+  return this.addToQueue(function () {    
+    var elementRect = getRect(this.page, selector);
+    if (elementRect) {
+      var elementCenter = elementRect.top + elementRect.height / 2;
+      var scrollY = elementCenter - page.viewportSize.height / 2;
+      this.page.evaluate(function (y, x) {
+        return window.scrollTo(x, y);
+      }, scrollY, 0);
+
+      return true;
+    }    
+
+    return false;
+  });
+};
+
+EasyBot.prototype.scrollToSelectorSmooth = function (selector) {
+  return this.addToQueue(function () {
+    var page = this.page;
+    var elementRect = getRect(page, selector);
+    if (elementRect) {
+      if (elementRect.top >= 0 && elementRect.top <= page.viewportSize.height) {
+        return true;
+      } else {
+        var scrollHeight = getScrollHeight(page);
+        var maxScroll    = scrollHeight - page.viewportSize.height;
+        var scrollStep   = Math.round(8*page.viewportSize.height/9);
+		    var direction    = elementRect.top + elementRect.height/2 >= page.viewportSize.height/2 ? 1 : -1;
+		    var heightMargin = page.viewportSize.height/8;
+        
+        return promiseWhile(function () {
+            elementRect = getRect(page, selector);
+            var elementCenter = elementRect.top+elementRect.height/2;
+            var direction = elementCenter <= page.viewportSize.height/2 ? 1 : -1;
+            var scrollTop = getScrollTop(page);          
+
+            return !((elementCenter + heightMargin < page.viewportSize.height && elementCenter - heightMargin > 0) || 
+                (scrollTop==0 && elementCenter <= page.viewportSize.height && elementCenter >=0) || 
+                (scrollTop==maxScroll && elementCenter <= page.viewportSize.height && elementCenter >= 0));	          
+          },
+
+          function () {
+            page.evaluate(function(direction, scrollStep, elementRect, heightMargin) {		
+              					
+              var elementCenter = elementRect.top+elementRect.height/2;
+              var clientHeight = document.documentElement.clientHeight;					
+              if ((elementCenter > 0 && elementCenter - clientHeight < clientHeight/3) || (elementCenter < 0 && -elementCenter < clientHeight / 3)) {
+                console.log("variant 1");
+                randomScroll = direction * (Math.floor(Math.random() * 50 + clientHeight * 2 / 3 - 50));
+              } else if ((elementCenter > 0 && elementCenter < heightMargin) || (elementCenter < clientHeight && elementCenter > clientHeight - heightMargin)) {
+                console.log("variant 2");
+                randomScroll = direction * (Math.floor(Math.random() * 50 + 2 * heightMargin - 50));
+              } else {
+                console.log("variant 3");
+                randomScroll = direction * (Math.floor(Math.random() * 50 + scrollStep - 50));
+              }
+
+              window.scrollBy(0,randomScroll);
+              console.log("scrollstep = " + direction * randomScroll);
+
+            }, direction, scrollStep, elementRect, heightMargin);				
+            
+            //elementRect = getRect(page, selector);          
+            var randomDelay = Math.floor(Math.random() * 60 + 100);
+            return Promise.delay(randomDelay);	
+          }
+        ).then(function () { return true; });
+      }
+    }
+
+    return false;
+  });
+};
+
+EasyBot.prototype.setFocus = function (selector) {
+  return this.evaluate(function (selector) {
+    return window.__utils__.setFocus(selector);
+  }, selector);
 };
 
 EasyBot.prototype.mousedown = function (selector) {
@@ -207,13 +315,10 @@ EasyBot.prototype.click = function (selector) {
 };
 
 EasyBot.prototype.clickNatural = function (selector) {
-  return this.evaluate(function (selector) {
-    window.scrollBy(0, 1600);
-    console.log('RECTTTTT ' + window.__utils__.getRect(selector));
-    return window.__utils__.getRect(selector);
-  }, selector)
-  .then(function (elementRect) {
-    if(elementRect) {      
+  return this.scrollToSelectorSmooth(selector)
+  .then(function (status) {
+    if(status) {
+      var elementRect = getRect(this.page, selector);      
       var elementY = elementRect.top + elementRect.height/2 + Math.round(elementRect.height*(0.5 - Math.random())/15);
 		  var elementX = elementRect.left + elementRect.width/2 + Math.round(elementRect.width*(0.5 - Math.random())/15);
       console.log('Clicking element at: ' + elementX + ' ' + elementY);

@@ -25,3 +25,12 @@ exports.polifills = function () {
     };
   }
 };
+
+exports.promiseWhile = function (predicate, action) {
+    function loop (p) {
+        if (!predicate()) return p;
+        return Promise.resolve(action()).then(loop);
+    }
+
+    return Promise.resolve().then(loop);
+};

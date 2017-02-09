@@ -40,6 +40,16 @@ module.exports.pageUtils = function (text) {
       return false;
     };
 
+    window.__utils__.setFocus = function (selector) {
+      someElement = document.querySelector(selector);
+      if (someElement !== null) {
+        someElement.focus();
+        return true;
+      }
+
+      return false;
+    };
+
     window.__utils__.getRect = function (selector) {
       someElement = document.querySelector(selector);
       if (someElement !== null) {
