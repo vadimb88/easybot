@@ -1,10 +1,11 @@
 'use strict';
-require('./utils').polifills();
-var Promise = require('./libs/bluebird.min');
+var Promise      = require('./libs/bluebird.min');
 var promiseWhile = require('./utils').promiseWhile;
-var webpage = require('webpage');
-var pageUtils = require('./libs/pageUtils').pageUtils;
-var fs = require('fs');
+var Bezier       = require('./utils').Bezier; 
+var webpage      = require('webpage');
+var pageUtils    = require('./libs/pageUtils').pageUtils;
+var fs           = require('fs');
+require('./utils').polifills();
 
 var EVENTS = [''];
 
@@ -33,11 +34,19 @@ var createEventHandler = function (ctx, eventName) {
 
 var EasyBot = function (options) {
   this.queue = Promise.resolve();
+  this.defaultQueue = 'queue';
   this.page = webpage.create();
+  this.mouse = {
+    x: 0,
+    y: 0
+  };
+
   this.handlers = {};
 };
 
-EasyBot.prototype.addToQueue = function (cb) {
+EasyBot.prototype.addToQueue = function (cb, queue) {
+  /*queue = queue === undefined ? this[this.defaultQueue] : queue;
+  queue = queue.then(cb.bind(this));*/
   this.queue = this.queue.then(cb.bind(this));
   return this;
 };
@@ -205,6 +214,7 @@ EasyBot.prototype.scrollToSelector = function (selector) {
     if (elementRect) {
       var elementCenter = elementRect.top + elementRect.height / 2;
       var scrollY = elementCenter - page.viewportSize.height / 2;
+      console.log('Scrolling TO: ' + scrollY);
       this.page.evaluate(function (y, x) {
         return window.scrollTo(x, y);
       }, scrollY, 0);
@@ -226,11 +236,12 @@ EasyBot.prototype.scrollToSelectorSmooth = function (selector) {
       } else {
         var scrollHeight = getScrollHeight(page);
         var maxScroll    = scrollHeight - page.viewportSize.height;
-        var scrollStep   = Math.round(8*page.viewportSize.height/9);
-		    var direction    = elementRect.top + elementRect.height/2 >= page.viewportSize.height/2 ? 1 : -1;
-		    var heightMargin = page.viewportSize.height/8;
+        var scrollStep   = Math.round(8 * page.viewportSize.height / 9);
+		    var direction    = elementRect.top + elementRect.height / 2 >= page.viewportSize.height / 2 ? 1 : -1;
+		    var heightMargin = page.viewportSize.height / 8;
         
-        return promiseWhile(function () {
+        return promiseWhile(
+          function predicate () {
             elementRect = getRect(page, selector);
             var elementCenter = elementRect.top+elementRect.height/2;
             var direction = elementCenter <= page.viewportSize.height/2 ? 1 : -1;
@@ -241,9 +252,8 @@ EasyBot.prototype.scrollToSelectorSmooth = function (selector) {
                 (scrollTop==maxScroll && elementCenter <= page.viewportSize.height && elementCenter >= 0));	          
           },
 
-          function () {
-            page.evaluate(function(direction, scrollStep, elementRect, heightMargin) {		
-              					
+          function action () {
+            page.evaluate(function (direction, scrollStep, elementRect, heightMargin) {		              					
               var elementCenter = elementRect.top+elementRect.height/2;
               var clientHeight = document.documentElement.clientHeight;					
               if ((elementCenter > 0 && elementCenter - clientHeight < clientHeight/3) || (elementCenter < 0 && -elementCenter < clientHeight / 3)) {
@@ -257,7 +267,7 @@ EasyBot.prototype.scrollToSelectorSmooth = function (selector) {
                 randomScroll = direction * (Math.floor(Math.random() * 50 + scrollStep - 50));
               }
 
-              window.scrollBy(0,randomScroll);
+              window.scrollBy(0, randomScroll);
               console.log("scrollstep = " + direction * randomScroll);
 
             }, direction, scrollStep, elementRect, heightMargin);				            
@@ -265,7 +275,9 @@ EasyBot.prototype.scrollToSelectorSmooth = function (selector) {
             var randomDelay = Math.floor(Math.random() * 60 + 100);
             return Promise.delay(randomDelay);	
           }
-        ).then(function () { return true; });
+        ).then(function () { 
+          return true;
+        });
       }
     }
 
@@ -301,6 +313,47 @@ EasyBot.prototype.mouseout = function (selector) {
   return this;
 };
 
+var mouseMoveToXY = function(ctx, x, y) {
+  /*
+   * Using ctx instead of bind() 
+   * I don't want this function to be public and don't want to bind it every time i use it
+   */
+
+  ctx.mouse.x = x;
+  ctx.mouse.y = y;
+  ctx.page.sendEvent('mousemove', x, y);
+  return { x: x, y: y };
+};
+
+EasyBot.prototype.mouseMoveTo = function (x, y) {
+  return this.addToQueue(function () {   
+    return mouseMoveToXY(this, x, y);
+  });  
+};
+
+EasyBot.prototype.mouseMoveToSmooth = function (x, y) {
+  /* Placeholder. Not implemented yet */
+  return this;
+};
+
+EasyBot.prototype.mouseMoveToSelector = function (selector) {
+  return this.addToQueue(function () {
+    var elementRect = getRect(this.page, selector);
+    if (elementRect) {
+      var elementY = elementRect.top + elementRect.height/2 + Math.round(elementRect.height*(0.5 - Math.random())/15);
+      var elementX = elementRect.left + elementRect.width/2 + Math.round(elementRect.width*(0.5 - Math.random())/15);    
+      return mouseMoveToXY(this, elementX, elementY);
+    }      
+    
+    return false;
+  });  
+};
+
+EasyBot.prototype.mouseMoveToSelectorSmooth = function (x, y) {
+  /* Placeholder. Not implemented yet */
+  return this;
+};
+
 EasyBot.prototype.clickEvent = function (selector) {
   return this.evaluate(function (selector) {
     return window.__utils__.clickEvent(selector);
@@ -313,7 +366,7 @@ EasyBot.prototype.click = function (selector) {
   }, selector);
 };
 
-EasyBot.prototype.clickNatural = function (selector) {
+EasyBot.prototype.clickSmooth = function (selector) {
   return this.scrollToSelectorSmooth(selector)
   .then(function (status) {
     if(status) {
@@ -327,6 +380,52 @@ EasyBot.prototype.clickNatural = function (selector) {
     
     return false;
   });
+};
+
+EasyBot.prototype.if = function (predicate, thenFunc, elseFunc) {
+    var startQueue = this.queue;
+
+    return this.addToQueue(function () {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        var tempQueue = self.queue;
+        // Create new queue then add it to old one
+        // TODO: Should i create mechanism to better managing of queues?
+        self.queue = Promise.resolve();
+        var predicateResult = predicate.call(self);
+        console.log('predicateResult ' + predicateResult);
+        console.log(predicateResult instanceof EasyBot);
+        
+        // Wrapping result if predicate function returns something but not EasyBot instance. 
+        if(predicateResult !== undefined && !(predicateResult instanceof EasyBot)) {
+          self.then(function () {
+            return predicateResult;
+          });
+        }
+
+        self.then(function (result) {
+          console.log('PREDICATE RESULT ' + result);
+          var funcRes;
+          if (result) {        
+            funcRes = thenFunc.call(self, result);
+          } else {
+            funcRes = elseFunc.call(self, result);
+          }
+
+          // Wrapping result if callback function returns something but not EasyBot instance
+          if(funcRes !== undefined && !(funcRes instanceof EasyBot)) {
+            self.then(function () {
+              return funcRes;
+            });
+          }
+          
+          var endQueue = this.queue;
+          this.queue = tempQueue;
+          console.log('RETURNING!!!');
+          resolve(endQueue);
+        }); 
+      });
+    });
 };
 
 EasyBot.prototype.evaluate = function () {
