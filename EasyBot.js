@@ -166,6 +166,25 @@ var removeEventListenerSync = function (type, listener) {
     return true; 
 };
 
+EasyBot.prototype.setHeaders = function (headers, once) {
+  once = once === undefined ? false : once;
+  return this.addToQueue(function () {
+    this.page.customHeaders = headers;
+
+    if (once) {
+      addEventListenerSync.call(this, 'onInitialized', function () {        
+        this.page.customHeaders = {};       
+      }, true);
+    }
+  });
+};
+
+EasyBot.prototype.resetHeaders = function () {
+  return this.addToQueue(function () {
+    this.page.customHeaders = {};  
+  });
+};
+
 EasyBot.prototype.addEventListener = function (type, listener, once) {
   once = once === undefined ? false : once;
   return this.addToQueue(function () {
