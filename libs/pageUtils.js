@@ -16,7 +16,7 @@ module.exports.pageUtils = function (text) {
       return false;      
     };
 
-    window.__utils__.clickEvent = function (selector) {
+    window.__utils__.clickEvent = function (selector) {      
       return window.__utils__.dispatchMouseEvent('click', document.querySelector(selector));
     };
 
@@ -29,8 +29,9 @@ module.exports.pageUtils = function (text) {
     };
 
     window.__utils__.clickSelector = function (selector) {
-      someElement = document.querySelector(selector);
+      someElement = document.querySelector(selector);      
       if (someElement !== null) {
+        document.activeElement.blur();
         window.__utils__.dispatchMouseEvent('mousedown', someElement);
         window.__utils__.dispatchMouseEvent('mouseup', someElement); 
         window.__utils__.dispatchMouseEvent('click', someElement);

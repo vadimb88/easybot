@@ -92,7 +92,7 @@ exports.Bezier = {
         res[ind] = [0,0];
         
         for (var i = 0; i < arr.length; i++) {
-            var b = getBezierBasis(i, arr.length - 1, t);            
+            var b = this.getBezierBasis(i, arr.length - 1, t);            
             res[ind][0] += Math.ceil(arr[i][0] * b);
             res[ind][1] += Math.ceil(arr[i][1] * b);
         }

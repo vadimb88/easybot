@@ -79,7 +79,8 @@ EasyBot.prototype.goto = function (url) {
 };
 
 EasyBot.prototype.back = function () {
-  /* Page goBack function is async but it doesn't take any callbacks.
+  /* 
+   * Page goBack function is async but it doesn't take any callbacks.
    * So i wraped it in Promise and resolve this promise after onLoadFinished event.
    */
   
@@ -98,7 +99,8 @@ EasyBot.prototype.back = function () {
 };
 
 EasyBot.prototype.forward = function () {
-  /* Page goForward function is async but it doesn't take any callbacks.
+  /*
+   * Page goForward function is async but it doesn't take any callbacks.
    * So i wraped it in Promise and resolve this promise after onLoadFinished event.
    */
 
@@ -117,7 +119,8 @@ EasyBot.prototype.forward = function () {
 };
 
 EasyBot.prototype.refresh = function () {
-  /* Page reload function is async but it doesn't take any callbacks.
+  /* 
+   * Page reload function is async but it doesn't take any callbacks.
    * So i wraped it in Promise and resolve this promise after onLoadFinished event.
    */
 
@@ -134,15 +137,15 @@ EasyBot.prototype.refresh = function () {
 var addEventListenerSync = function (type, listener, once) {
   once = once === undefined ? false : once;
   console.log('Adding event Listener for: ' + type);
-  if(typeof listener !== 'function') {
+  if (typeof listener !== 'function') {
     return false;
   }
 
-  if(typeof this.page[type] !== 'function') {
+  if (typeof this.page[type] !== 'function') {
     this.page[type] = createEventHandler(this, type);
   }
 
-  if(this.handlers[type] === undefined) {
+  if (this.handlers[type] === undefined) {
     this.handlers[type] = [];
   }
 
@@ -152,11 +155,11 @@ var addEventListenerSync = function (type, listener, once) {
 
 var removeEventListenerSync = function (type, listener) {  
     console.log('Removing event Listener for: ' + type);
-    if(this.handlers[type] === undefined) return true;
+    if (this.handlers[type] === undefined) return true;
 
     var listenerIndex = this.handlers[type].findIndex(function (el) { console.log('SS ' + el); return el !== null && el.fn === listener; });
     console.log('Listener index: ' + listenerIndex);
-    if(listenerIndex !== -1) {
+    if (listenerIndex !== -1) {
       this.handlers[type].splice(listenerIndex, 1);
     }
 
@@ -291,6 +294,12 @@ EasyBot.prototype.setFocus = function (selector) {
   }, selector);
 };
 
+EasyBot.prototype.blur = function () {
+  return this.evaluate(function () {
+    return document.activeElement.blur();
+  });
+};
+
 EasyBot.prototype.mousedown = function (selector) {
   return this.evaluate(function (selector) {
     return window.__utils__.mousedownEvent(selector);
@@ -325,15 +334,49 @@ var mouseMoveToXY = function(ctx, x, y) {
   return { x: x, y: y };
 };
 
+var mouseMoveToXYSmooth = function(ctx, x, y, options) {
+  /*
+   * Using ctx instead of bind() 
+   * I don't want this function to be public and don't want to bind it every time i use it
+   */
+  var time = options !== undefined && options.time !== undefined ? options.time : 500;   
+  var page = ctx.page;
+  var wayX = x - ctx.mouse.x;
+  var wayY = y - ctx.mouse.y;  
+  var stepQuant = options !== undefined && options.steps !== undefined ? options.steps : Math.ceil(Math.sqrt(wayX*wayX + wayY*wayY)*20/(page.viewportSize.height));   
+  console.log('MOVING MOUSE');
+  console.log("pageX = " + ctx.mouse.x + " pageY = " + ctx.mouse.y);
+
+  if (stepQuant <= 1) {		      
+    console.log('Moving to (' + x +',' +y +')');      
+    return mouseMoveToXY(ctx, x, y);
+  } else {
+    var mainPoints = Bezier.getMainPoints([ctx.mouse.x, ctx.mouse.y], [x, y]);
+    console.log('MAIN POINTS: ' + mainPoints);
+    console.log('STEP: ' + stepQuant);
+    var movePoints = Bezier.getBezierCurve(mainPoints, 4/stepQuant);
+    var interval = time / (movePoints.length - 1);
+    console.log('MOVE POINTS: ' + JSON.stringify(movePoints));
+    
+    return movePoints
+      .reduce(function (queue, point) {   				
+        return queue.then(function () {
+          console.log('Moving to (' + point[0] +',' +point[1] +')');
+          page.sendEvent('mousemove', point[0], point[1]);
+        }).delay(interval);
+      }, Promise.resolve())
+      .then(function () {
+        ctx.mouse.x = x;
+        ctx.mouse.y = y;
+        return { x: x, y: y }; 
+      });
+  }
+};
+
 EasyBot.prototype.mouseMoveTo = function (x, y) {
   return this.addToQueue(function () {   
     return mouseMoveToXY(this, x, y);
   });  
-};
-
-EasyBot.prototype.mouseMoveToSmooth = function (x, y) {
-  /* Placeholder. Not implemented yet */
-  return this;
 };
 
 EasyBot.prototype.mouseMoveToSelector = function (selector) {
@@ -349,9 +392,23 @@ EasyBot.prototype.mouseMoveToSelector = function (selector) {
   });  
 };
 
-EasyBot.prototype.mouseMoveToSelectorSmooth = function (x, y) {
-  /* Placeholder. Not implemented yet */
-  return this;
+EasyBot.prototype.mouseMoveToSmooth = function (x, y, options) {
+  return this.addToQueue(function () {
+    return mouseMoveToXYSmooth(this, x, y, options);    
+  });
+};
+
+EasyBot.prototype.mouseMoveToSelectorSmooth = function (selector, options) {
+  return this.addToQueue(function () {
+    var elementRect = getRect(this.page, selector);
+    if (elementRect) {
+      var elementY = elementRect.top + elementRect.height/2 + Math.round(elementRect.height*(0.5 - Math.random())/15);
+      var elementX = elementRect.left + elementRect.width/2 + Math.round(elementRect.width*(0.5 - Math.random())/15);    
+      return mouseMoveToXYSmooth(this, elementX, elementY, options);
+    }      
+    
+    return false;
+  });
 };
 
 EasyBot.prototype.clickEvent = function (selector) {
@@ -367,19 +424,24 @@ EasyBot.prototype.click = function (selector) {
 };
 
 EasyBot.prototype.clickSmooth = function (selector) {
-  return this.scrollToSelectorSmooth(selector)
-  .then(function (status) {
-    if(status) {
-      var elementRect = getRect(this.page, selector);      
-      var elementY = elementRect.top + elementRect.height/2 + Math.round(elementRect.height*(0.5 - Math.random())/15);
-		  var elementX = elementRect.left + elementRect.width/2 + Math.round(elementRect.width*(0.5 - Math.random())/15);
-      console.log('Clicking element at: ' + elementX + ' ' + elementY);
-      page.sendEvent('click', elementX, elementY, 'left');
-      return true;
-    }
-    
-    return false;
-  });
+  return this
+    .scrollToSelectorSmooth(selector)
+    .delay(300)
+    .mouseMoveToSelector(selector)
+    .delay(200)
+    .setFocus(selector)
+    .then(function (status) {
+      if (status) {
+        var elementRect = getRect(this.page, selector);      
+        var elementY = elementRect.top + elementRect.height/2 + Math.round(elementRect.height*(0.5 - Math.random())/15);
+        var elementX = elementRect.left + elementRect.width/2 + Math.round(elementRect.width*(0.5 - Math.random())/15);
+        console.log('Clicking element at: ' + elementX + ' ' + elementY);
+        page.sendEvent('click', elementX, elementY, 'left');
+        return true;
+      }
+      
+      return false;
+    });
 };
 
 EasyBot.prototype.if = function (predicate, thenFunc, elseFunc) {
@@ -397,7 +459,7 @@ EasyBot.prototype.if = function (predicate, thenFunc, elseFunc) {
         console.log(predicateResult instanceof EasyBot);
         
         // Wrapping result if predicate function returns something but not EasyBot instance. 
-        if(predicateResult !== undefined && !(predicateResult instanceof EasyBot)) {
+        if (predicateResult !== undefined && !(predicateResult instanceof EasyBot)) {
           self.then(function () {
             return predicateResult;
           });
@@ -406,14 +468,14 @@ EasyBot.prototype.if = function (predicate, thenFunc, elseFunc) {
         self.then(function (result) {
           console.log('PREDICATE RESULT ' + result);
           var funcRes;
-          if (result) {        
+          if (result && typeof thenFunc === 'function') {        
             funcRes = thenFunc.call(self, result);
-          } else {
+          } else if (!result && typeof elseFunc === 'function') {
             funcRes = elseFunc.call(self, result);
           }
 
           // Wrapping result if callback function returns something but not EasyBot instance
-          if(funcRes !== undefined && !(funcRes instanceof EasyBot)) {
+          if (funcRes !== undefined && !(funcRes instanceof EasyBot)) {
             self.then(function () {
               return funcRes;
             });
@@ -430,7 +492,6 @@ EasyBot.prototype.if = function (predicate, thenFunc, elseFunc) {
 
 EasyBot.prototype.evaluate = function () {
   var args = Array.prototype.slice.apply(arguments);
-  console.log('Arguments ' + args);
   this.addToQueue(function () {
     console.log('Trying to evaluate');
     return this.page.evaluate.apply(this.page, args);
@@ -442,26 +503,25 @@ EasyBot.prototype.evaluate = function () {
 EasyBot.prototype.type = function (selector, text, options) {
   var clean = options !== undefined && options.clean !== undefined ? options.clean : true;
 
-  return this.evaluate(function (selector, clean) {
-    someInput = document.querySelector(selector);
-    if (clean) {
-      someInput.value = '';
-    }
+  return this
+    .setFocus(selector)
+    .delay(100)
+    .evaluate(function (selector, clean) {
+      someInput = document.querySelector(selector);    
+      if (someInput !== null) {
+        if (clean) {
+          someInput.value = '';
+        }
 
-    if (someInput !== null) {
-      if (someInput !== document.activeElement) {
-        makeClick(someInput);
+        return true;
       }
-
-      return true;
-    }
-    
-    return false;    
-  }, selector, clean).then(function (success) {
-    console.log('Filling success ' + success);
-    this.page.sendEvent('keypress', text);
-    return success;
-  });
+      
+      return false;    
+    }, selector, clean).then(function (success) {
+      console.log('Filling success ' + success);
+      this.page.sendEvent('keypress', text);
+      return success;
+    });
 };
 
 EasyBot.prototype.catch = function (errorHandler) {
@@ -491,31 +551,32 @@ EasyBot.prototype.getScreenshot = function (fileName) {
 EasyBot.prototype.getSelectorScreen = function (selector, fileName) {
   fileName = fileName !== undefined ? fileName : 'screenshot.png';  
 
-  return this.evaluate(function (selector) {
-    someElement = document.querySelector(selector);
-    if(someElement !== null) {
-      return someElement.getBoundingClientRect();
-    }
+  return this
+    .evaluate(function (selector) {
+      someElement = document.querySelector(selector);
+      if (someElement !== null) {
+        return someElement.getBoundingClientRect();
+      }
 
-    return false;
-  }, selector)
-  .then(function (elementRect) {
-    if (elementRect) {
-      var tempRect = this.page.clipRect;
-      this.page.clipRect = {
-        top:    elementRect.top,
-        left:   elementRect.left,
-        width:  elementRect.width,
-        height: elementRect.height
-      };
+      return false;
+    }, selector)
+    .then(function (elementRect) {
+      if (elementRect) {
+        var tempRect = this.page.clipRect;
+        this.page.clipRect = {
+          top:    elementRect.top,
+          left:   elementRect.left,
+          width:  elementRect.width,
+          height: elementRect.height
+        };
 
-      this.page.render(fileName);
-      this.page.clipRect = tempRect;
-      return true;      
-    }
-    
-    return false;
-  });
+        this.page.render(fileName);
+        this.page.clipRect = tempRect;
+        return true;      
+      }
+      
+      return false;
+    });
 };
 
 EasyBot.prototype.exists = function (selector) {
