@@ -36,6 +36,7 @@ var EasyBot = function (options) {
   this.queue = Promise.resolve();
   this.defaultQueue = 'queue';
   this.page = webpage.create();
+  this.standartUseragent = this.page.settings.userAgent;
   this.mouse = {
     x: 0,
     y: 0
@@ -182,6 +183,47 @@ EasyBot.prototype.setHeaders = function (headers, once) {
 EasyBot.prototype.resetHeaders = function () {
   return this.addToQueue(function () {
     this.page.customHeaders = {};  
+  });
+};
+
+EasyBot.prototype.setProxy = function (host, port, type, user, password) {
+  return this.addToQueue(function () {
+    if (typeof host !== 'string') {
+      console.log('Setting proxy error: host should be string. Instead got ' + typeof host);
+      return false;
+    }
+
+    console.log('Setting proxy to ' + host + ':' + port);
+    phantom.setProxy(host, port, type, user, password);
+    return true;
+  });
+};
+
+EasyBot.prototype.resetProxy = function () {
+  return this.addToQueue(function () {
+    console.log('Reseting proxy');
+    phantom.setProxy('');
+  });
+};
+
+EasyBot.prototype.setUseragent = function (useragent) {
+  return this.addToQueue(function () {
+    if (typeof host !== 'string') {
+      console.log('Setting useragent error: useragent should be string. Instead got ' + typeof useragent);
+      return false;
+    }
+
+    console.log('Setting useragent to: ' + useragent);
+    this.page.settings.userAgent = useragent;
+    return this.page.settings.userAgent;
+  });
+};
+
+EasyBot.prototype.resetUseragent = function () {
+  return this.addToQueue(function () {
+    console.log('Resetting useragent');
+    this.page.settings.userAgent = this.standartUseragent;
+    return this.page.settings.userAgent;
   });
 };
 
@@ -558,13 +600,19 @@ EasyBot.prototype.delay = function (fromMs, toMs) {
   return this;  
 };
 
+EasyBot.prototype.savePage = function (fileName) {
+  fileName = fileName !== undefined ? fileName : 'pagecontent.html';
+  return this.addToQueue(function () {
+    return fs.write(fileName, this.page.content, 'w'); 
+  });
+};
+
+
 EasyBot.prototype.getScreenshot = function (fileName) {
   fileName = fileName !== undefined ? fileName : 'screenshot.png';
-  this.addToQueue(function () {
+  return this.addToQueue(function () {
     return this.page.render(fileName);
   });
-
-  return this;
 };
 
 EasyBot.prototype.getSelectorScreen = function (selector, fileName) {
