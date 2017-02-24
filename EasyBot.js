@@ -53,8 +53,31 @@ EasyBot.prototype.addToQueue = function (cb, queue) {
 };
 
 EasyBot.prototype.then = function (cb) {
-  this.addToQueue(cb);
-  return this;
+  var startQueue = this.queue;
+  var self = this;
+
+  this.queue = this.queue.then(function (previousRes) {
+    /* If there is some calls to bots method inside cb function,
+     * then actions will be added in new queue of promises
+     * and then this new queue will be returned back in main queue
+     */
+    var tempQueue = self.queue;
+    self.queue = Promise.resolve();
+    
+    var cbRes = cb.call(self, previousRes);
+    if (!(cbRes instanceof EasyBot)) {
+      self.queue = self.queue.then(function () {
+        return cbRes;
+      });
+    }
+
+    var endQueue = self.queue;
+    self.queue = tempQueue;
+    console.log('RETURNING!!!');
+    return endQueue;    
+  });
+
+  return this;  
 };
 
 EasyBot.prototype.goto = function (url) {
@@ -67,8 +90,7 @@ EasyBot.prototype.goto = function (url) {
           console.log('Unable to access network');
           reject(new Error('Network problems'));
         } else {
-          console.log('Page loaded');
-          //self.page.injectJs('./libs/pageUtils.js');           
+          console.log('Page loaded');       
           self.page.evaluate(pageUtils, 'Realy good text');
           resolve(status);
         }   
@@ -505,52 +527,6 @@ EasyBot.prototype.clickSmooth = function (selector) {
     });
 };
 
-EasyBot.prototype.if = function (predicate, thenFunc, elseFunc) {
-    var startQueue = this.queue;
-
-    return this.addToQueue(function () {
-      var self = this;
-      return new Promise(function (resolve, reject) {
-        var tempQueue = self.queue;
-        // Create new queue then add it to old one
-        // TODO: Should i create mechanism to better managing of queues?
-        self.queue = Promise.resolve();
-        var predicateResult = predicate.call(self);
-        console.log('predicateResult ' + predicateResult);
-        console.log(predicateResult instanceof EasyBot);
-        
-        // Wrapping result if predicate function returns something but not EasyBot instance. 
-        if (predicateResult !== undefined && !(predicateResult instanceof EasyBot)) {
-          self.then(function () {
-            return predicateResult;
-          });
-        }
-
-        self.then(function (result) {
-          console.log('PREDICATE RESULT ' + result);
-          var funcRes;
-          if (result && typeof thenFunc === 'function') {        
-            funcRes = thenFunc.call(self, result);
-          } else if (!result && typeof elseFunc === 'function') {
-            funcRes = elseFunc.call(self, result);
-          }
-
-          // Wrapping result if callback function returns something but not EasyBot instance
-          if (funcRes !== undefined && !(funcRes instanceof EasyBot)) {
-            self.then(function () {
-              return funcRes;
-            });
-          }
-          
-          var endQueue = this.queue;
-          this.queue = tempQueue;
-          console.log('RETURNING!!!');
-          resolve(endQueue);
-        }); 
-      });
-    });
-};
-
 EasyBot.prototype.evaluate = function () {
   var args = Array.prototype.slice.apply(arguments);
   this.addToQueue(function () {
@@ -600,13 +576,12 @@ EasyBot.prototype.delay = function (fromMs, toMs) {
   return this;  
 };
 
-EasyBot.prototype.savePage = function (fileName) {
+EasyBot.prototype.html = function (fileName) {
   fileName = fileName !== undefined ? fileName : 'pagecontent.html';
   return this.addToQueue(function () {
     return fs.write(fileName, this.page.content, 'w'); 
   });
 };
-
 
 EasyBot.prototype.getScreenshot = function (fileName) {
   fileName = fileName !== undefined ? fileName : 'screenshot.png';
@@ -652,6 +627,89 @@ EasyBot.prototype.exists = function (selector) {
   }, selector);
 
   return this;
+};
+
+EasyBot.prototype.visible = function (selector) {  
+  return this.evaluate(function (selector) {
+    someElement = document.querySelector(selector);
+    if (someElement !== null) {
+      return !window.__utils__.isHidden(someElement);
+    }
+
+    return false;
+  }, selector);
+};
+
+EasyBot.prototype.pdf = function (fileName) {  
+  fileName = fileName !== undefined ? fileName : 'page.pdf';
+  return this.addToQueue(function () {
+    return this.page.render(fileName, { format: 'pdf'});
+  });  
+};
+
+EasyBot.prototype.title = function () {  
+  return this.addToQueue(function () {
+    return this.page.title;
+  });  
+};
+
+EasyBot.prototype.url = function () {  
+  return this.addToQueue(function () {
+    return this.page.url;
+  });  
+};
+
+EasyBot.prototype.path = function () {  
+  return this.evaluate(function () {
+    return document.location.pathname;
+  }); 
+};
+
+/*Actions.prototype.while = function (predicate, action, pollInterval) {  
+    pollInterval = typeof pollInterval === 'undefined' ? 100 : pollInterval;
+    var self = this;
+    return this.addToQueue(function () {
+      return predicate.apply(this);
+    })
+    .then(function(res) {
+      console.log(res);
+  
+      //console.log(JSON.stringify(this));
+      if(res) {
+        return this.addToQueue(action)
+          .then(function (res) { console.log('ACTION RES: ' + res); })
+          .delay(pollInterval)
+          .while(predicate, action, pollInterval);
+          
+      }  else {
+        return res;
+      }
+    });     
+};
+*/
+/*
+EasyBot.prototype.while = function (predicate, action, pollInterval) {
+  pollInterval = typeof pollInterval === 'undefined' ? 100 : pollInterval;
+  return this.addToQueue(function () {
+    return predicate.apply(this);
+  })
+  .then(function(res) {
+    if(res) {
+      return this.addToQueue(action).delay(pollInterval).while(predicate, action, pollInterval);
+    }  else {
+      return res;
+    }
+  }); 
+};*/
+
+EasyBot.prototype.waitFor = function (predicate, pollInterval) {
+  /* Placeholder not implemented yet */
+  return this; 
+};
+
+EasyBot.prototype.waitSelector = function (selector, pollInterval) {
+  /* Placeholder not implemented yet */
+  return this; 
 };
 
 EasyBot.prototype.pupup = function () {  
