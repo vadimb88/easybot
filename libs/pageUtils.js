@@ -66,7 +66,12 @@ module.exports.pageUtils = function (text) {
       }
 
       return false;
-    };    
+    };
+
+    window.__utils__.isHidden = function (element) {
+      someStyle = window.getComputedStyle(element);
+      return someStyle.display === 'none';
+    };   
 
   })(text);
 };

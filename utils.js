@@ -57,13 +57,6 @@ exports.polifills = function () {
     });
   }
 
-  /*if (Promise && !Promise.prototype.delay) {
-    Promise.prototype.delay = function (ms) {
-      return new Promise(function (resolve, reject) {
-        setInterval(resolve.bind(this), ms);
-      });
-    }  
-  }*/
 };
 
 exports.promiseWhile = function (predicate, action) {
@@ -133,10 +126,3 @@ exports.Bezier = {
     return res;
   }
 };
-
-
-
-// arr - массив опорных точек. Точка - двухэлементный массив, (x = arr[0], y = arr[1])
-// step - шаг при расчете кривой (0 < step < 1), по умолчанию 0.01. Чем больше шаг - тем грубее кривая
-
-

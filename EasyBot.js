@@ -46,38 +46,121 @@ var EasyBot = function (options) {
 };
 
 EasyBot.prototype.addToQueue = function (cb, queue) {
-  /*queue = queue === undefined ? this[this.defaultQueue] : queue;
-  queue = queue.then(cb.bind(this));*/
   this.queue = this.queue.then(cb.bind(this));
   return this;
 };
 
 EasyBot.prototype.then = function (cb) {
-  var startQueue = this.queue;
   var self = this;
 
-  this.queue = this.queue.then(function (previousRes) {
-    /* If there is some calls to bots method inside cb function,
-     * then actions will be added in new queue of promises
-     * and then this new queue will be returned back in main queue
-     */
-    var tempQueue = self.queue;
-    self.queue = Promise.resolve();
-    
-    var cbRes = cb.call(self, previousRes);
-    if (!(cbRes instanceof EasyBot)) {
-      self.queue = self.queue.then(function () {
-        return cbRes;
-      });
-    }
+  if (typeof cb === 'function') {
+    this.queue = this.queue.then(function (previousRes) {
+      /* 
+      * If there is some calls to bots methods inside cb function
+      * which lead to addition of actions to queue,
+      * then actions will be added in new queue of promises
+      * and then this new queue will be returned back in main queue
+      */
+      var tempQueue = self.queue;
+      self.queue = Promise.resolve();
+      
+      var cbRes = cb.call(self, previousRes);
+      if (!(cbRes instanceof EasyBot)) {
+        self.queue = self.queue.then(function () {
+          return cbRes;
+        });
+      }
 
-    var endQueue = self.queue;
-    self.queue = tempQueue;
-    console.log('RETURNING!!!');
-    return endQueue;    
-  });
+      var endQueue = self.queue;
+      self.queue = tempQueue;
+      return endQueue;    
+    });
+  }
 
   return this;  
+};
+
+EasyBot.prototype.while = function (predicate, action, pollInterval) {
+  pollInterval = typeof pollInterval === 'undefined' ? 100 : pollInterval;
+  return this.then(predicate)
+  .then(function(res) {
+    if(res) {
+      return this
+        .then(action)
+        .delay(pollInterval)
+        .while(predicate, action, pollInterval);
+    }  else {
+      return res;
+    }
+  }); 
+};
+
+EasyBot.prototype.addCookie = function (cookie) {
+  return this.addToQueue(function () {
+    return phantom.addCookie(cookie);
+  }); 
+};
+
+EasyBot.prototype.deleteCookie = function (cookieName) {
+  return this.addToQueue(function () {
+    return phantom.deleteCookie(cookieName);
+  }); 
+};
+
+EasyBot.prototype.getCookie = function (cookieName) {
+  return this.addToQueue(function () {
+    return phantom.cookies.filter(function (cookie) { return cookie.name === cookieName; });
+  }); 
+};
+
+EasyBot.prototype.getAllCookies = function () {
+  return this.addToQueue(function () {
+    return phantom.cookies;
+  }); 
+};
+
+EasyBot.prototype.clearCookies = function () {
+  return this.addToQueue(function () {
+    return phantom.clearCookies();
+  }); 
+};
+
+EasyBot.prototype.saveCookies = function (fileName, domainRegexp) {
+  fileName = fileName !== undefined ? fileName : 'cookiejar.json';
+
+  return this.addToQueue(function () {
+    if (domainRegexp instanceof RegExp) {
+      return fs.write(fileName, JSON.stringify(phantom.cookies.filter(function (cookie) {
+        return domainRegexp.test(cookie.domain);
+      })), "w");
+    } else {
+      return fs.write(fileName, JSON.stringify(phantom.cookies), "w");
+    }
+  });  
+};
+
+EasyBot.prototype.loadCookies = function (fileName, domainRegexp) {
+  fileName = fileName !== undefined ? fileName : 'cookiejar.json';
+
+  return this.addToQueue(function () {
+    if (fs.isFile(fileName)) {
+      if (domainRegexp instanceof RegExp) {
+        Array.prototype.forEach.call(JSON.parse(fs.read(fileName)), function (cookie) {
+          if (domainRegexp.test(cookie.domain))
+            phantom.addCookie(cookie);
+
+        });
+      } else {
+        Array.prototype.forEach.call(JSON.parse(fs.read(fileName)), function (cookie) {
+          phantom.addCookie(cookie);
+        });
+      }     
+
+      return true;
+    }
+
+    return false;
+  });
 };
 
 EasyBot.prototype.goto = function (url) {
@@ -115,7 +198,7 @@ EasyBot.prototype.back = function () {
     }
 
     return new Promise(function (resolve, reject) {     
-        addEventListenerSync.call(self, 'onLoadFinished', function () { console.log('LOAD FINISHED WITH CALLBACK'); resolve(true); }, true);
+        addEventListenerSync.call(self, 'onLoadFinished', function () { resolve(true); }, true);
         self.page.goBack();          
     });   
   });
@@ -135,7 +218,7 @@ EasyBot.prototype.forward = function () {
     }
 
     return new Promise(function (resolve, reject) {     
-        addEventListenerSync.call(self, 'onLoadFinished', function () { console.log('LOAD FINISHED WITH CALLBACK'); resolve(true); }, true);
+        addEventListenerSync.call(self, 'onLoadFinished', function () { resolve(true); }, true);
         self.page.goForward();          
     });   
   });
@@ -151,7 +234,7 @@ EasyBot.prototype.refresh = function () {
     var self = this;
     console.log('Reloadind page with url: ' + self.page.url);
     return new Promise(function (resolve, reject) {     
-        addEventListenerSync.call(self, 'onLoadFinished', function () { console.log('LOAD FINISHED WITH CALLBACK'); resolve(true); }, true);
+        addEventListenerSync.call(self, 'onLoadFinished', function () { resolve(true); }, true);
         self.page.reload();          
     });   
   }); 
@@ -230,7 +313,7 @@ EasyBot.prototype.resetProxy = function () {
 
 EasyBot.prototype.setUseragent = function (useragent) {
   return this.addToQueue(function () {
-    if (typeof host !== 'string') {
+    if (typeof useragent !== 'string') {
       console.log('Setting useragent error: useragent should be string. Instead got ' + typeof useragent);
       return false;
     }
@@ -426,7 +509,7 @@ var mouseMoveToXYSmooth = function(ctx, x, y, options) {
   var page = ctx.page;
   var wayX = x - ctx.mouse.x;
   var wayY = y - ctx.mouse.y;  
-  var stepQuant = options !== undefined && options.steps !== undefined ? options.steps : Math.ceil(Math.sqrt(wayX*wayX + wayY*wayY)*20/(page.viewportSize.height));   
+  var stepQuant = options !== undefined && options.steps !== undefined ? options.steps : Math.ceil(Math.sqrt(wayX * wayX + wayY * wayY) * 20 / page.viewportSize.height);   
   console.log('MOVING MOUSE');
   console.log("pageX = " + ctx.mouse.x + " pageY = " + ctx.mouse.y);
 
@@ -629,6 +712,14 @@ EasyBot.prototype.exists = function (selector) {
   return this;
 };
 
+EasyBot.prototype.notExists = function (selector) {
+  this.evaluate(function (selector) {
+    return document.querySelector(selector) === null;
+  }, selector);
+
+  return this;
+};
+
 EasyBot.prototype.visible = function (selector) {  
   return this.evaluate(function (selector) {
     someElement = document.querySelector(selector);
@@ -665,51 +756,14 @@ EasyBot.prototype.path = function () {
   }); 
 };
 
-/*Actions.prototype.while = function (predicate, action, pollInterval) {  
-    pollInterval = typeof pollInterval === 'undefined' ? 100 : pollInterval;
-    var self = this;
-    return this.addToQueue(function () {
-      return predicate.apply(this);
-    })
-    .then(function(res) {
-      console.log(res);
-  
-      //console.log(JSON.stringify(this));
-      if(res) {
-        return this.addToQueue(action)
-          .then(function (res) { console.log('ACTION RES: ' + res); })
-          .delay(pollInterval)
-          .while(predicate, action, pollInterval);
-          
-      }  else {
-        return res;
-      }
-    });     
-};
-*/
-/*
-EasyBot.prototype.while = function (predicate, action, pollInterval) {
-  pollInterval = typeof pollInterval === 'undefined' ? 100 : pollInterval;
-  return this.addToQueue(function () {
-    return predicate.apply(this);
-  })
-  .then(function(res) {
-    if(res) {
-      return this.addToQueue(action).delay(pollInterval).while(predicate, action, pollInterval);
-    }  else {
-      return res;
-    }
-  }); 
-};*/
-
 EasyBot.prototype.waitFor = function (predicate, pollInterval) {
-  /* Placeholder not implemented yet */
-  return this; 
+  pollInterval = typeof pollInterval === 'undefined' ? 100 : pollInterval;  
+  return this.while(predicate, null, pollInterval);
 };
 
 EasyBot.prototype.waitSelector = function (selector, pollInterval) {
-  /* Placeholder not implemented yet */
-  return this; 
+  pollInterval = typeof pollInterval === 'undefined' ? 100 : pollInterval;  
+  return this.while(function () { return this.notExists(selector); }, null, pollInterval);
 };
 
 EasyBot.prototype.pupup = function () {  
